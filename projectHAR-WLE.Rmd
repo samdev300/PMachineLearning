@@ -1,0 +1,161 @@
+---
+title: "Practical Machine Learning - HAR Project"
+author: "Sam S. Kim"
+date: "April 23, 2015"
+output: html_document
+---
+
+### Background
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible 
+to collect a large amount of data about personal activity relatively inexpensively. 
+These type of devices are part of the quantified self movement – a group of 
+enthusiasts who take measurements about themselves regularly to improve their 
+health, to find patterns in their behavior, or because they are tech geeks. One 
+thing that people regularly do is quantify how much of a particular activity they 
+do, but they rarely quantify how well they do it.
+
+**In this project,** I'll be using data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants.  They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website and it's cited at the bottom of this document.
+
+
+#### Explore and Prepare Data
+
+Load the given data sets:
+
+```{r results='hide'}
+training <- read.csv("data/pml-training.csv")
+testing <- read.csv("data/pml-testing.csv")
+```
+
+Then review the summary:
+
+```{r results='hide'}
+# Briefly review the summary of the dataset - each variable
+str(training)
+summary(training)
+
+str(testing)
+summary(testing)
+```
+
+#### Two things to note from the summary:
+
+**One.** The response variable *classe* has 5 levels:
+
+A = Exactly according to the specification
+
+B = Throwing the elbows to the front
+
+C = Lifting the dumbbell only halfway
+
+D = Lowering the dumbbell only halfway
+
+E = Throwing the hips to the front
+
+Also note the proportion of the *classe* value distributions:
+
+```{r echo=FALSE}
+prop.table(table(training$classe))
+```
+
+
+**Two.** There were lots of missing data, or NA's.
+
+Since I'd need to predict the *classe* for each observation in testing set, 
+I'd to make sure the training and testing sets have the same set of predictors, and 
+they could not have missing values.  So I removed all the columns in the testing set 
+with all NA's.
+
+```{r}
+# Get column names that have zero NA's.  This is the possible pool of predictors we could use.
+colsForTesting <- colnames(testing)[colSums(is.na(testing)) == 0]
+length(colsForTesting)
+
+# Now get the column names for training set;  Include the "classe" response variable for training.
+colsForTraining <- c(colsForTesting[1:59], "classe")
+length(colsForTraining)
+```
+
+
+### Processing & Modeling
+
+Load the necessary libraries:
+```{r results='hide', message=FALSE}
+library(caTools)
+library(randomForest)
+library(caret)
+
+library(doMC)
+registerDoMC(cores = 3)  # Use multi cores for faster processing of random forest.
+```
+
+
+Subset to just the necessary columns and split the training data to train (70%) & validation (30%) data.
+
+```{r results='hide'}
+# Subset the only the necessary columns
+training <- training[, colsForTraining]
+training$X <- NULL
+
+# Split the data into train & test set
+set.seed(300)
+spl <- sample.split(training$classe, SplitRatio=.70)
+mTrain <- subset(training, spl == TRUE)
+mTest <- subset(training, spl == FALSE)
+
+``` 
+
+
+Apply Random Forest using caret package, and apply k-fold cross valiation.
+
+```{r cache=TRUE}
+# K-fold cross validation
+fitControl <- trainControl(method="cv", number=10)
+
+set.seed(300)
+modFitRF <- train(classe ~., data=mTrain, method="rf", trControl=fitControl)
+```
+
+### Out-of-sample error
+
+Now predicted the *classe* on the validation set splitted from the training data.
+As shown below in the confusion matrix, that accuracy is 0.9992.
+That's an out-of-sample error of just **0.08%**.
+
+```{r}
+predRF <- predict(modFitRF, mTest)
+
+confusionMatrix(predRF, mTest$classe)
+```
+
+
+### Predict the *classe* in the testing set using the model just built.
+
+```{r}
+predTesting <- predict(modFitRF, testing)
+
+predTesting
+```
+
+
+
+### Conclusion
+
+So a random forest model did the trick of guessing *classe* correctly for the testing set.
+Many of the measurements from accelerometers turned out to be very good predictors for how 
+well a certain activity is performed.  Perhaps it could lead to a 
+self-teaching of physical activity with the aid of a machine that would give immediate 
+feedback based on these similar sets of data.
+
+
+
+#### Reference:
+Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. [Qualitative Activity Recognition 
+of Weight Lifting Exercises](http://groupware.les.inf.puc-rio.br/work.jsf?p1=11201). Proceedings of 4th International Conference in Cooperation with SIGCHI 
+(Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013.
+ 
+[DocumentoDocumento](http://groupware.les.inf.puc-rio.br/public/papers/2013.Velloso.QAR-WLE.pdf)
+
+
+
+
